@@ -1,0 +1,12 @@
+{
+  "name": "leave-manager",
+  "version": "1.0.0",
+  "description": "연차 관리 시스템",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
