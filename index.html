@@ -13,8 +13,6 @@ body{font-family:'Noto Sans KR',-apple-system,sans-serif;background:var(--bg);co
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 @keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
-.sync-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
-.sync-ok{background:var(--gn)}.sync-err{background:var(--rd)}
 
 .login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f0f2f5}
 .login-card{background:#fff;border:1px solid var(--bd);border-radius:16px;padding:40px 36px;width:380px;max-width:92vw;box-shadow:0 4px 24px rgba(0,0,0,.06);animation:slideUp .4s}
@@ -111,265 +109,254 @@ td{padding:10px 14px;font-size:13px;border-bottom:1px solid var(--bd)}
 <body>
 <div id="app"></div>
 <script>
-// ═══ API (서버 통신) ═══
-const API = window.location.origin;
-let syncOk = true;
+const SK='leave-mgr-v3';
+const DD={
+accounts:[
+{id:'acc1',loginId:'admin',password:'admin123',employeeId:'emp1'},
+{id:'acc2',loginId:'seoyeon',password:'1234',employeeId:'emp2'},
+{id:'acc3',loginId:'jihoon',password:'1234',employeeId:'emp3'},
+{id:'acc4',loginId:'yujin',password:'1234',employeeId:'emp4'},
+{id:'acc5',loginId:'haneul',password:'1234',employeeId:'emp5'}
+],
+employees:[
+{id:'emp1',name:'김민수',department:'개발팀',totalLeave:15,role:'admin'},
+{id:'emp2',name:'이서연',department:'디자인팀',totalLeave:15,role:'member'},
+{id:'emp3',name:'박지훈',department:'마케팅팀',totalLeave:15,role:'member'},
+{id:'emp4',name:'최유진',department:'개발팀',totalLeave:15,role:'member'},
+{id:'emp5',name:'정하늘',department:'인사팀',totalLeave:15,role:'member'}
+],
+leaveRequests:[
+{id:'lr1',employeeId:'emp2',startDate:'2026-02-16',endDate:'2026-02-17',reason:'개인 사유',status:'approved',type:'연차',createdAt:'2026-02-10'},
+{id:'lr2',employeeId:'emp3',startDate:'2026-02-20',endDate:'2026-02-20',reason:'병원 방문',status:'pending',type:'반차(오전)',createdAt:'2026-02-12'},
+{id:'lr3',employeeId:'emp4',startDate:'2026-03-02',endDate:'2026-03-04',reason:'가족 여행',status:'approved',type:'연차',createdAt:'2026-02-08'},
+{id:'lr4',employeeId:'emp1',startDate:'2026-01-15',endDate:'2026-01-16',reason:'이사',status:'approved',type:'연차',createdAt:'2026-01-10'},
+{id:'lr5',employeeId:'emp5',startDate:'2026-02-25',endDate:'2026-02-27',reason:'경조사',status:'pending',type:'연차',createdAt:'2026-02-13'}
+]};
 
-async function loadData() {
-  try {
-    const res = await fetch(API + '/api/data');
-    const data = await res.json();
-    syncOk = true;
-    return data;
-  } catch {
-    syncOk = false;
-    return null;
-  }
-}
+let D={},LU=null,CT='dashboard',CY,CM,LE='';
 
-async function saveToServer(data) {
-  try {
-    await fetch(API + '/api/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-    syncOk = true;
-  } catch {
-    syncOk = false;
-  }
-}
+function init(){
+const n=new Date();CY=n.getFullYear();CM=n.getMonth();
+try{const s=localStorage.getItem(SK);D=s?JSON.parse(s):JSON.parse(JSON.stringify(DD))}catch{D=JSON.parse(JSON.stringify(DD))}
+const ss=sessionStorage.getItem('leave-s');
+if(ss){const a=D.accounts.find(x=>x.id===ss);if(a)LU=a}
+R()}
 
-// ═══ STATE ═══
-let D = {}, LU = null, CT = 'dashboard', CY, CM, LE = '';
+function sv(){try{localStorage.setItem(SK,JSON.stringify(D))}catch{}}
+function resetAll(){if(!confirm('모든 데이터를 초기화하시겠습니까?'))return;D=JSON.parse(JSON.stringify(DD));sv();R()}
 
-async function init() {
-  const n = new Date(); CY = n.getFullYear(); CM = n.getMonth();
-  const serverData = await loadData();
-  if (serverData) {
-    D = serverData;
-  } else {
-    alert('서버에 연결할 수 없습니다. 서버가 실행 중인지 확인해주세요.');
-    return;
-  }
-  const ss = sessionStorage.getItem('leave-s');
-  if (ss) { const a = D.accounts.find(x => x.id === ss); if (a) LU = a; }
-  R();
-  // 5초마다 서버에서 최신 데이터 가져오기
-  setInterval(async () => {
-    const fresh = await loadData();
-    if (fresh && LU) {
-      D = fresh;
-      // 로그인 유지 확인
-      const stillExists = D.accounts.find(a => a.id === LU.id);
-      if (!stillExists) { LU = null; sessionStorage.removeItem('leave-s'); }
-      R();
-    }
-  }, 5000);
-}
+const gid=()=>'id'+Math.random().toString(36).slice(2,10);
+const td=()=>new Date().toISOString().split('T')[0];
+const fd=(y,m,d)=>`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-async function sv() { await saveToServer(D); }
-async function resetAll() {
-  if (!confirm('모든 데이터를 초기화하시겠습니까?')) return;
-  try {
-    await fetch(API + '/api/reset', { method: 'POST' });
-    const fresh = await loadData();
-    if (fresh) D = fresh;
-  } catch {}
-  R();
-}
+function cdays(s,e,t){
+const a=new Date(s),b=new Date(e);let d=0;
+for(let x=new Date(a);x<=b;x.setDate(x.getDate()+1)){const w=x.getDay();if(w!==0&&w!==6)d++}
+if(t&&t.startsWith('반차'))return d>0?d-0.5:0.5;return d}
 
-const gid = () => 'id' + Math.random().toString(36).slice(2, 10);
-const td = () => new Date().toISOString().split('T')[0];
-const fd = (y, m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+function uLeave(eid){return D.leaveRequests.filter(r=>r.employeeId===eid&&r.status==='approved').reduce((s,r)=>s+cdays(r.startDate,r.endDate,r.type),0)}
+function gE(id){return D.employees.find(e=>e.id===id)}
+function myE(){return LU?gE(LU.employeeId):null}
+function isA(){const e=myE();return e?.role==='admin'}
 
-function cdays(s, e, t) {
-  const a = new Date(s), b = new Date(e); let d = 0;
-  for (let x = new Date(a); x <= b; x.setDate(x.getDate() + 1)) { const w = x.getDay(); if (w !== 0 && w !== 6) d++; }
-  if (t && t.startsWith('반차')) return d > 0 ? d - 0.5 : 0.5; return d;
-}
+const pal=['#4f46e5','#059669','#dc2626','#d97706','#3b82f6','#8b5cf6','#ec4899','#06b6d4','#f97316','#14b8a6'];
+function eCol(eid){const i=D.employees.findIndex(e=>e.id===eid);return pal[i%pal.length]}
+function bH(st){const m={approved:['승인','b-ok'],pending:['대기','b-pn'],rejected:['반려','b-rj']};const[l,c]=m[st]||m.pending;return`<span class="badge ${c}">${l}</span>`}
+function rB(r){return r==='admin'?'<span class="badge b-adm">관리자</span>':'<span class="badge b-mem">일반</span>'}
 
-function uLeave(eid) { return D.leaveRequests.filter(r => r.employeeId === eid && r.status === 'approved').reduce((s, r) => s + cdays(r.startDate, r.endDate, r.type), 0); }
-function gE(id) { return D.employees.find(e => e.id === id); }
-function myE() { return LU ? gE(LU.employeeId) : null; }
-function isA() { const e = myE(); return e?.role === 'admin'; }
+function doLogin(){
+const l=document.getElementById('lid').value.trim(),p=document.getElementById('lpw').value;
+if(!l||!p){LE='아이디와 비밀번호를 입력해주세요.';R();return}
+const a=D.accounts.find(x=>x.loginId===l&&x.password===p);
+if(!a){LE='아이디 또는 비밀번호가 올바르지 않습니다.';R();return}
+LU=a;LE='';CT='dashboard';sessionStorage.setItem('leave-s',a.id);R()}
+function doLogout(){LU=null;LE='';sessionStorage.removeItem('leave-s');R()}
+function lkd(e){if(e.key==='Enter')doLogin()}
+function tpw(){const e=document.getElementById('lpw');e.type=e.type==='password'?'text':'password'}
 
-const pal = ['#4f46e5', '#059669', '#dc2626', '#d97706', '#3b82f6', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#14b8a6'];
-function eCol(eid) { const i = D.employees.findIndex(e => e.id === eid); return pal[i % pal.length]; }
-function bH(st) { const m = { approved: ['승인', 'b-ok'], pending: ['대기', 'b-pn'], rejected: ['반려', 'b-rj'] }; const [l, c] = m[st] || m.pending; return `<span class="badge ${c}">${l}</span>`; }
-function rB(r) { return r === 'admin' ? '<span class="badge b-adm">관리자</span>' : '<span class="badge b-mem">일반</span>'; }
+function R(){document.getElementById('app').innerHTML=LU?rMain():rLogin();if(!LU){const e=document.getElementById('lid');if(e)e.focus()}}
+function sTab(id){CT=id;R()}
 
-function doLogin() {
-  const l = document.getElementById('lid').value.trim(), p = document.getElementById('lpw').value;
-  if (!l || !p) { LE = '아이디와 비밀번호를 입력해주세요.'; R(); return; }
-  const a = D.accounts.find(x => x.loginId === l && x.password === p);
-  if (!a) { LE = '아이디 또는 비밀번호가 올바르지 않습니다.'; R(); return; }
-  LU = a; LE = ''; CT = 'dashboard'; sessionStorage.setItem('leave-s', a.id); R();
-}
-function doLogout() { LU = null; LE = ''; sessionStorage.removeItem('leave-s'); R(); }
-function lkd(e) { if (e.key === 'Enter') doLogin(); }
-function tpw() { const e = document.getElementById('lpw'); e.type = e.type === 'password' ? 'text' : 'password'; }
-
-function R() { document.getElementById('app').innerHTML = LU ? rMain() : rLogin(); if (!LU) { const e = document.getElementById('lid'); if (e) e.focus(); } }
-function sTab(id) { CT = id; R(); }
-
-function rLogin() {
-  return `<div class="login-wrap"><div class="login-card">
+function rLogin(){
+return`<div class="login-wrap"><div class="login-card">
 <div class="login-logo">🗓</div>
 <div class="login-title">연차 관리 시스템</div>
 <div class="login-sub">계정 정보를 입력하여 로그인하세요</div>
-${LE ? `<div class="login-error">${LE}</div>` : ''}
+${LE?`<div class="login-error">${LE}</div>`:''}
 <div class="fg"><label class="fl">아이디</label><input class="fi" id="lid" placeholder="아이디를 입력하세요" onkeydown="lkd(event)" autocomplete="off"></div>
 <div class="fg"><label class="fl">비밀번호</label><div class="pw-wrap"><input class="fi" id="lpw" type="password" placeholder="비밀번호를 입력하세요" onkeydown="lkd(event)"><button class="pw-toggle" onclick="tpw()" type="button">👁</button></div></div>
 <button class="btn btn-p btn-full" style="margin-top:8px" onclick="doLogin()">로그인</button>
-</div></div>`;
-}
+</div></div>`}
 
-function rMain() {
-  const e = myE(), adm = isA(), pn = D.leaveRequests.filter(r => r.status === 'pending').length;
-  const tabs = [{ id: 'dashboard', i: '📊', l: '대시보드' }, { id: 'calendar', i: '📅', l: '캘린더' }, { id: 'requests', i: '📋', l: '연차 내역' }];
-  if (adm) { tabs.push({ id: 'approve', i: '✅', l: '승인 관리' }); tabs.push({ id: 'employees', i: '👥', l: '직원 관리' }); tabs.push({ id: 'accounts', i: '🔐', l: '계정 관리' }); }
-  return `<div class="hdr"><div class="hdr-l"><div class="hdr-icon">🗓</div><span class="hdr-t">연차 관리</span>${adm ? '<span class="adm-badge">관리자</span>' : ''}<span style="font-size:10px;color:var(--tm);margin-left:8px"><span class="sync-dot ${syncOk ? 'sync-ok' : 'sync-err'}"></span>${syncOk ? '연결됨' : '연결 끊김'}</span></div>
-<div class="hdr-r"><div class="hdr-user"><div class="hdr-av">${e?.name?.[0] || '?'}</div><div><div class="hdr-un">${e?.name || ''}</div><div class="hdr-ur">${e?.department || ''}</div></div></div>
+function rMain(){
+const e=myE(),adm=isA(),pn=D.leaveRequests.filter(r=>r.status==='pending').length;
+const tabs=[{id:'dashboard',i:'📊',l:'대시보드'},{id:'calendar',i:'📅',l:'캘린더'},{id:'requests',i:'📋',l:'연차 내역'}];
+if(adm){tabs.push({id:'overview',i:'📊',l:'전체 현황'});tabs.push({id:'approve',i:'✅',l:'승인 관리'});tabs.push({id:'employees',i:'👥',l:'직원 관리'});tabs.push({id:'accounts',i:'🔐',l:'계정 관리'})}
+return`<div class="hdr"><div class="hdr-l"><div class="hdr-icon">🗓</div><span class="hdr-t">연차 관리</span>${adm?'<span class="adm-badge">관리자</span>':''}</div>
+<div class="hdr-r"><div class="hdr-user"><div class="hdr-av">${e?.name?.[0]||'?'}</div><div><div class="hdr-un">${e?.name||''}</div><div class="hdr-ur">${e?.department||''}</div></div></div>
 <button class="btn-logout" onclick="doLogout()">로그아웃</button></div></div>
 <div class="lay"><div class="side">
-${tabs.map(t => `<button class="nav-b ${CT === t.id ? 'act' : ''}" onclick="sTab('${t.id}')"><span>${t.i}</span><span class="nav-tx">${t.l}</span>${t.id === 'approve' && pn > 0 ? `<span class="nav-badge">${pn}</span>` : ''}</button>`).join('')}
+${tabs.map(t=>`<button class="nav-b ${CT===t.id?'act':''}" onclick="sTab('${t.id}')"><span>${t.i}</span><span class="nav-tx">${t.l}</span>${t.id==='approve'&&pn>0?`<span class="nav-badge">${pn}</span>`:''}</button>`).join('')}
 <div class="side-div"><button class="btn btn-p btn-full" onclick="openNR()">+ 연차 신청</button></div>
 <div class="side-bot"><button class="nav-b" onclick="openMyAcc()"><span>⚙</span><span class="nav-tx">내 정보</span></button></div>
-</div><div class="cnt">${rCnt()}</div></div>`;
-}
+</div><div class="cnt">${rCnt()}</div></div>`}
 
-function rCnt() {
-  switch (CT) {
-    case 'dashboard': return rDash(); case 'calendar': return rCal(); case 'requests': return rReqs();
-    case 'approve': return isA() ? rAppr() : ''; case 'employees': return isA() ? rEmps() : ''; case 'accounts': return isA() ? rAccs() : ''; default: return '';
-  }
-}
+function rCnt(){
+switch(CT){
+case'dashboard':return rDash();case'calendar':return rCal();case'requests':return rReqs();
+case'overview':return isA()?rOverview():'';case'approve':return isA()?rAppr():'';case'employees':return isA()?rEmps():'';case'accounts':return isA()?rAccs():'';default:return''}}
 
-function rDash() {
-  const e = myE(), u = uLeave(e.id), rem = e.totalLeave - u, pct = e.totalLeave ? Math.round(u / e.totalLeave * 100) : 0;
-  const pn = D.leaveRequests.filter(r => r.status === 'pending').length, adm = isA();
-  const mr = D.leaveRequests.filter(r => r.employeeId === e.id).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5);
-  return `<h2 style="margin-bottom:20px;font-size:20px;font-weight:700">안녕하세요, ${e.name}님</h2>
+function rDash(){
+const e=myE(),u=uLeave(e.id),rem=e.totalLeave-u,pct=e.totalLeave?Math.round(u/e.totalLeave*100):0;
+const pn=D.leaveRequests.filter(r=>r.status==='pending').length,adm=isA();
+const mr=D.leaveRequests.filter(r=>r.employeeId===e.id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,5);
+return`<h2 style="margin-bottom:20px;font-size:20px;font-weight:700">안녕하세요, ${e.name}님</h2>
 <div class="sc">
 <div class="scard"><div class="sl">총 연차</div><div class="sv">${e.totalLeave}</div><div class="ss">일</div></div>
 <div class="scard"><div class="sl">사용</div><div class="sv" style="color:var(--ac)">${u}</div><div class="ss">일</div></div>
-<div class="scard"><div class="sl">잔여</div><div class="sv" style="color:${rem <= 3 ? 'var(--rd)' : 'var(--gn)'}">${rem}</div><div class="ss">일</div></div>
-${adm ? `<div class="scard"><div class="sl">승인 대기</div><div class="sv" style="color:${pn > 0 ? 'var(--yl)' : 'var(--tm)'}">${pn}</div><div class="ss">건</div></div>` : ''}
+<div class="scard"><div class="sl">잔여</div><div class="sv" style="color:${rem<=3?'var(--rd)':'var(--gn)'}">${rem}</div><div class="ss">일</div></div>
+${adm?`<div class="scard"><div class="sl">승인 대기</div><div class="sv" style="color:${pn>0?'var(--yl)':'var(--tm)'}">${pn}</div><div class="ss">건</div></div>`:''}
 </div>
 <div class="panel"><div style="display:flex;justify-content:space-between;margin-bottom:8px"><span style="font-size:13px;font-weight:600">연차 사용률</span><span style="font-size:13px;color:var(--ac);font-weight:600">${pct}%</span></div><div class="pbar"><div class="pfill" style="width:${pct}%"></div></div></div>
 <div class="panel"><div class="panel-t">최근 신청</div>
-${mr.length ? mr.map(r => `<div class="ritem"><div><div style="font-size:13px;font-weight:500">${r.startDate === r.endDate ? r.startDate : r.startDate + ' ~ ' + r.endDate}</div><div style="font-size:11px;color:var(--ts);margin-top:2px">${r.type} · ${r.reason}</div></div>${bH(r.status)}</div>`).join('') : '<div class="empty">신청 내역이 없습니다</div>'}
-</div>`;
-}
+${mr.length?mr.map(r=>`<div class="ritem"><div><div style="font-size:13px;font-weight:500">${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</div><div style="font-size:11px;color:var(--ts);margin-top:2px">${r.type} · ${r.reason}</div></div>${bH(r.status)}</div>`).join(''):'<div class="empty">신청 내역이 없습니다</div>'}
+</div>`}
 
-function rCal() {
-  const sd = new Date(CY, CM, 1).getDay(), dim = new Date(CY, CM + 1, 0).getDate(), t = td();
-  const ap = D.leaveRequests.filter(r => r.status === 'approved');
-  const dn = ['일', '월', '화', '수', '목', '금', '토'];
-  let c = ''; for (let i = 0; i < sd; i++) c += '<div></div>';
-  for (let d = 1; d <= dim; d++) {
-    const ds = fd(CY, CM, d), it = ds === t, dw = new Date(CY, CM, d).getDay(), iw = dw === 0 || dw === 6;
-    const ev = ap.filter(r => r.startDate <= ds && r.endDate >= ds);
-    c += `<div class="cc ${it ? 'tod' : ''}"><div class="cd ${iw ? 'we' : ''} ${it ? 'tn' : ''}">${d}</div>
-${ev.slice(0, 3).map(v => { const e = gE(v.employeeId), cl = eCol(v.employeeId); return `<div class="cev" style="background:${cl}11;color:${cl};border-color:${cl}">${e?.name || ''}</div>`; }).join('')}
-${ev.length > 3 ? `<div style="font-size:9px;color:var(--tm);text-align:center">+${ev.length - 3}</div>` : ''}</div>`;
-  }
-  return `<div class="panel"><div class="ch"><button class="btn btn-gh" onclick="chM(-1)">◀</button><h2 style="font-size:18px">${CY}년 ${CM + 1}월</h2><button class="btn btn-gh" onclick="chM(1)">▶</button></div>
-<div class="cg" style="margin-bottom:3px">${dn.map((n, i) => `<div class="cdn ${i === 0 ? 'sun' : ''} ${i === 6 ? 'sat' : ''}">${n}</div>`).join('')}</div>
+function rCal(){
+const sd=new Date(CY,CM,1).getDay(),dim=new Date(CY,CM+1,0).getDate(),t=td();
+const ap=D.leaveRequests.filter(r=>r.status==='approved');
+const dn=['일','월','화','수','목','금','토'];
+let c='';for(let i=0;i<sd;i++)c+='<div></div>';
+for(let d=1;d<=dim;d++){
+const ds=fd(CY,CM,d),it=ds===t,dw=new Date(CY,CM,d).getDay(),iw=dw===0||dw===6;
+const ev=ap.filter(r=>r.startDate<=ds&&r.endDate>=ds);
+c+=`<div class="cc ${it?'tod':''}"><div class="cd ${iw?'we':''} ${it?'tn':''}">${d}</div>
+${ev.slice(0,3).map(v=>{const e=gE(v.employeeId),cl=eCol(v.employeeId);return`<div class="cev" style="background:${cl}11;color:${cl};border-color:${cl}">${e?.name||''}</div>`}).join('')}
+${ev.length>3?`<div style="font-size:9px;color:var(--tm);text-align:center">+${ev.length-3}</div>`:''}</div>`}
+return`<div class="panel"><div class="ch"><button class="btn btn-gh" onclick="chM(-1)">◀</button><h2 style="font-size:18px">${CY}년 ${CM+1}월</h2><button class="btn btn-gh" onclick="chM(1)">▶</button></div>
+<div class="cg" style="margin-bottom:3px">${dn.map((n,i)=>`<div class="cdn ${i===0?'sun':''} ${i===6?'sat':''}">${n}</div>`).join('')}</div>
 <div class="cg">${c}</div>
-<div class="cleg">${D.employees.map(e => `<div class="cli"><div class="cld" style="background:${eCol(e.id)}"></div>${e.name}</div>`).join('')}</div></div>`;
-}
-function chM(d) { CM += d; if (CM > 11) { CM = 0; CY++; } if (CM < 0) { CM = 11; CY--; } R(); }
+<div class="cleg">${D.employees.map(e=>`<div class="cli"><div class="cld" style="background:${eCol(e.id)}"></div>${e.name}</div>`).join('')}</div></div>`}
+function chM(d){CM+=d;if(CM>11){CM=0;CY++}if(CM<0){CM=11;CY--}R()}
 
-function rReqs() {
-  const e = myE(), m = D.leaveRequests.filter(r => r.employeeId === e.id).sort((a, b) => b.startDate.localeCompare(a.startDate));
-  return `<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">연차 사용 내역</h2>
+function rReqs(){
+const e=myE(),m=D.leaveRequests.filter(r=>r.employeeId===e.id).sort((a,b)=>b.startDate.localeCompare(a.startDate));
+return`<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">연차 사용 내역</h2>
 <div class="panel" style="padding:0;overflow:hidden"><div class="tw"><table>
 <thead><tr><th>유형</th><th>기간</th><th>일수</th><th>사유</th><th>상태</th><th></th></tr></thead>
-<tbody>${m.length ? m.map(r => `<tr><td>${r.type}</td><td>${r.startDate === r.endDate ? r.startDate : r.startDate + ' ~ ' + r.endDate}</td><td>${cdays(r.startDate, r.endDate, r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td>${r.status === 'pending' ? `<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>` : ''}</td></tr>`).join('') : '<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
-</tbody></table></div></div>`;
-}
+<tbody>${m.length?m.map(r=>`<tr><td>${r.type}</td><td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td><td>${cdays(r.startDate,r.endDate,r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td>${r.status==='pending'?`<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>`:''}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
+</tbody></table></div></div>`}
 
-function rAppr() {
-  const pn = D.leaveRequests.filter(r => r.status === 'pending');
-  const dn = D.leaveRequests.filter(r => r.status !== 'pending').sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 10);
-  return `<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">승인 관리</h2>
-${pn.length ? pn.map(r => { const e = gE(r.employeeId), u = uLeave(r.employeeId), rem = (e?.totalLeave || 15) - u;
-return `<div class="rcard"><div><div style="font-size:14px;font-weight:600;margin-bottom:3px">${e?.name} <span style="font-size:11px;color:var(--ts);font-weight:400">(${e?.department})</span></div>
-<div style="font-size:12px;color:var(--ts);margin-bottom:2px">${r.type} · ${r.startDate === r.endDate ? r.startDate : r.startDate + ' ~ ' + r.endDate} (${cdays(r.startDate, r.endDate, r.type)}일)</div>
+// Overview - 전체 직원 연차 현황
+function rOverview(){
+const emps=D.employees.map(emp=>{const u=uLeave(emp.id),rem=emp.totalLeave-u,pct=emp.totalLeave?Math.round(u/emp.totalLeave*100):0;return{...emp,used:u,remain:rem,pct}});
+const allReqs=D.leaveRequests.sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+const totalUsed=emps.reduce((s,e)=>s+e.used,0),totalAll=emps.reduce((s,e)=>s+e.totalLeave,0);
+return`<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">📊 전체 직원 연차 현황</h2>
+<div class="sc">
+<div class="scard"><div class="sl">전체 직원</div><div class="sv">${emps.length}</div><div class="ss">명</div></div>
+<div class="scard"><div class="sl">전체 사용일</div><div class="sv" style="color:var(--ac)">${totalUsed}</div><div class="ss">/ ${totalAll}일</div></div>
+<div class="scard"><div class="sl">평균 사용률</div><div class="sv" style="color:var(--yl)">${totalAll?Math.round(totalUsed/totalAll*100):0}%</div><div class="ss"></div></div>
+</div>
+<div class="panel"><div class="panel-t">직원별 연차 현황</div>
+<div class="tw"><table><thead><tr><th>이름</th><th>부서</th><th>총 연차</th><th>사용</th><th>잔여</th><th>사용률</th><th>상태</th></tr></thead>
+<tbody>${emps.map(e=>`<tr>
+<td style="font-weight:600">${e.name}</td>
+<td style="color:var(--ts)">${e.department}</td>
+<td>${e.totalLeave}일</td>
+<td style="color:var(--ac);font-weight:600">${e.used}일</td>
+<td style="color:${e.remain<=3?'var(--rd)':'var(--gn)'};font-weight:600">${e.remain}일</td>
+<td><div style="display:flex;align-items:center;gap:8px"><div class="pbar" style="width:80px;height:6px"><div class="pfill" style="width:${e.pct}%"></div></div><span style="font-size:11px;color:var(--ts)">${e.pct}%</span></div></td>
+<td>${e.remain<=0?'<span class="badge b-rj">소진</span>':e.remain<=3?'<span class="badge b-pn">부족</span>':'<span class="badge b-ok">여유</span>'}</td>
+</tr>`).join('')}</tbody></table></div></div>
+<div class="panel"><div class="panel-t">전체 연차 신청 내역</div>
+<div class="tw"><table><thead><tr><th>신청자</th><th>부서</th><th>유형</th><th>기간</th><th>일수</th><th>사유</th><th>상태</th></tr></thead>
+<tbody>${allReqs.length?allReqs.map(r=>{const e=gE(r.employeeId);return`<tr>
+<td style="font-weight:500">${e?.name||'-'}</td>
+<td style="color:var(--ts)">${e?.department||'-'}</td>
+<td>${r.type}</td>
+<td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td>
+<td>${cdays(r.startDate,r.endDate,r.type)}일</td>
+<td style="color:var(--ts)">${r.reason}</td>
+<td>${bH(r.status)}</td>
+</tr>`}).join(''):'<tr><td colspan="7" class="empty">내역이 없습니다</td></tr>'}
+</tbody></table></div></div>`}
+
+function rAppr(){
+const pn=D.leaveRequests.filter(r=>r.status==='pending');
+const dn=D.leaveRequests.filter(r=>r.status!=='pending').sort((a,b)=>b.createdAt.localeCompare(a.createdAt)).slice(0,10);
+return`<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">승인 관리</h2>
+${pn.length?pn.map(r=>{const e=gE(r.employeeId),u=uLeave(r.employeeId),rem=(e?.totalLeave||15)-u;
+return`<div class="rcard"><div><div style="font-size:14px;font-weight:600;margin-bottom:3px">${e?.name} <span style="font-size:11px;color:var(--ts);font-weight:400">(${e?.department})</span></div>
+<div style="font-size:12px;color:var(--ts);margin-bottom:2px">${r.type} · ${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate} (${cdays(r.startDate,r.endDate,r.type)}일)</div>
 <div style="font-size:11px;color:var(--tm)">사유: ${r.reason}</div>
-<div style="font-size:11px;color:${rem <= 3 ? 'var(--rd)' : 'var(--gn)'};margin-top:3px">잔여: ${rem}일</div></div>
-<div style="display:flex;gap:6px"><button class="btn btn-g" onclick="aR('${r.id}')">승인</button><button class="btn btn-r" onclick="rR('${r.id}')">반려</button></div></div>`; }).join('') : '<div class="panel"><div class="empty">대기 중인 신청이 없습니다</div></div>'}
+<div style="font-size:11px;color:${rem<=3?'var(--rd)':'var(--gn)'};margin-top:3px">잔여: ${rem}일</div></div>
+<div style="display:flex;gap:6px"><button class="btn btn-g" onclick="aR('${r.id}')">승인</button><button class="btn btn-r" onclick="rR('${r.id}')">반려</button></div></div>`}).join(''):'<div class="panel"><div class="empty">대기 중인 신청이 없습니다</div></div>'}
 <h3 style="margin:24px 0 12px;font-size:15px;font-weight:600">처리 완료</h3>
-${dn.map(r => { const e = gE(r.employeeId); return `<div class="hrow"><div><span style="font-weight:500">${e?.name}</span> <span style="color:var(--ts)">${r.startDate} ~ ${r.endDate}</span></div>${bH(r.status)}</div>`; }).join('')}`;
-}
+${dn.map(r=>{const e=gE(r.employeeId);return`<div class="hrow"><div><span style="font-weight:500">${e?.name}</span> <span style="color:var(--ts)">${r.startDate} ~ ${r.endDate}</span></div>${bH(r.status)}</div>`}).join('')}`}
 
-function rEmps() {
-  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:18px;font-weight:700">직원 관리</h2>
+function rEmps(){
+return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:18px;font-weight:700">직원 관리</h2>
 <div style="display:flex;gap:6px"><button class="btn btn-p" onclick="openAE()">+ 직원 추가</button><button class="btn btn-r btn-sm" onclick="resetAll()">초기화</button></div></div>
-${D.employees.map(emp => { const u = uLeave(emp.id), rem = emp.totalLeave - u;
-return `<div class="ecard"><div class="einfo"><div class="eav">${emp.name[0]}</div><div><div style="font-size:14px;font-weight:600">${emp.name} ${rB(emp.role)}</div><div style="font-size:11px;color:var(--ts)">${emp.department}</div></div></div>
+${D.employees.map(emp=>{const u=uLeave(emp.id),rem=emp.totalLeave-u;
+return`<div class="ecard"><div class="einfo"><div class="eav">${emp.name[0]}</div><div><div style="font-size:14px;font-weight:600">${emp.name} ${rB(emp.role)}</div><div style="font-size:11px;color:var(--ts)">${emp.department}</div></div></div>
 <div style="display:flex;align-items:center;gap:14px"><div style="text-align:right"><div style="font-size:13px;font-weight:500"><span style="color:var(--gn)">${rem}</span> / ${emp.totalLeave}일</div><div style="font-size:10px;color:var(--tm)">잔여 / 총</div></div>
-<div style="display:flex;gap:5px"><button class="btn btn-gh btn-sm" onclick="openEE('${emp.id}')">수정</button>${emp.id !== LU.employeeId ? `<button class="btn btn-r btn-sm" onclick="dE('${emp.id}')">삭제</button>` : ''}</div></div></div>`; }).join('')}`;
-}
+<div style="display:flex;gap:5px"><button class="btn btn-gh btn-sm" onclick="openEE('${emp.id}')">수정</button>${emp.id!==LU.employeeId?`<button class="btn btn-r btn-sm" onclick="dE('${emp.id}')">삭제</button>`:''}</div></div></div>`}).join('')}`}
 
-function rAccs() {
-  return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:18px;font-weight:700">계정 관리</h2>
+function rAccs(){
+return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:18px;font-weight:700">계정 관리</h2>
 <button class="btn btn-p" onclick="openAA()">+ 계정 추가</button></div>
 <div class="panel" style="padding:0;overflow:hidden"><div class="tw"><table>
 <thead><tr><th>이름</th><th>아이디</th><th>비밀번호</th><th>부서</th><th>권한</th><th></th></tr></thead>
-<tbody>${D.accounts.map(a => { const e = gE(a.employeeId); return `<tr>
-<td style="font-weight:500">${e?.name || '-'}</td>
+<tbody>${D.accounts.map(a=>{const e=gE(a.employeeId);return`<tr>
+<td style="font-weight:500">${e?.name||'-'}</td>
 <td><code style="background:var(--sa);padding:2px 7px;border-radius:4px;font-size:11px">${a.loginId}</code></td>
 <td style="color:var(--tm)">••••••</td>
-<td style="color:var(--ts)">${e?.department || '-'}</td>
-<td>${rB(e?.role || 'member')}</td>
-<td><div style="display:flex;gap:5px"><button class="btn btn-gh btn-sm" onclick="openEA('${a.id}')">수정</button>${a.id !== LU.id ? `<button class="btn btn-r btn-sm" onclick="dA('${a.id}')">삭제</button>` : ''}</div></td></tr>`; }).join('')}
+<td style="color:var(--ts)">${e?.department||'-'}</td>
+<td>${rB(e?.role||'member')}</td>
+<td><div style="display:flex;gap:5px"><button class="btn btn-gh btn-sm" onclick="openEA('${a.id}')">수정</button>${a.id!==LU.id?`<button class="btn btn-r btn-sm" onclick="dA('${a.id}')">삭제</button>`:''}</div></td></tr>`}).join('')}
 </tbody></table></div></div>
 <div style="margin-top:18px"><div style="font-size:14px;font-weight:600;margin-bottom:10px">📦 데이터 백업 / 복원</div>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
-<a class="btn btn-gh" href="/api/backup" download style="text-decoration:none">💾 백업 다운로드</a>
-<button class="btn btn-gh" onclick="document.getElementById('imp-file').click()">📂 백업 복원</button>
-<input type="file" id="imp-file" accept=".json" style="display:none" onchange="impData(event)">
+<button class="btn btn-gh" onclick="exportData()">💾 백업 다운로드</button>
+<button class="btn btn-gh" onclick="document.getElementById('import-file').click()">📂 백업 복원</button>
+<input type="file" id="import-file" accept=".json" style="display:none" onchange="importData(event)">
 </div>
 <div style="margin-top:10px;padding:12px;background:var(--sa);border-radius:8px;border:1px solid var(--bd);font-size:11px;color:var(--tm);line-height:1.7">
 💡 <b style="color:var(--ts)">안내</b><br>
-· 정기적으로 백업을 다운로드해 보관하세요<br>
-· 서버 재시작으로 데이터가 초기화되면 백업 파일로 복원할 수 있습니다<br>
-· 복원 시 현재 데이터는 백업 데이터로 교체됩니다
-</div></div>`;
-}
+· 백업 파일(JSON)을 다운로드하여 보관하세요<br>
+· 다른 PC나 브라우저에서 복원하면 동일한 데이터를 사용할 수 있습니다<br>
+· 복원 시 현재 데이터는 백업 파일의 데이터로 교체됩니다
+</div></div>`}
 
-// Actions
-async function aR(id) { const r = D.leaveRequests.find(x => x.id === id); if (r) { r.status = 'approved'; await sv(); R(); } }
-async function rR(id) { const r = D.leaveRequests.find(x => x.id === id); if (r) { r.status = 'rejected'; await sv(); R(); } }
-async function dR(id) { D.leaveRequests = D.leaveRequests.filter(r => r.id !== id); await sv(); R(); }
-async function dE(id) { if (!confirm('이 직원을 삭제하시겠습니까?')) return; D.employees = D.employees.filter(e => e.id !== id); D.accounts = D.accounts.filter(a => a.employeeId !== id); D.leaveRequests = D.leaveRequests.filter(r => r.employeeId !== id); await sv(); R(); }
-async function dA(id) { if (!confirm('이 계정을 삭제하시겠습니까?')) return; D.accounts = D.accounts.filter(a => a.id !== id); await sv(); R(); }
+function aR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='approved';sv();R()}}
+function rR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='rejected';sv();R()}}
+function dR(id){D.leaveRequests=D.leaveRequests.filter(r=>r.id!==id);sv();R()}
+function dE(id){if(!confirm('이 직원을 삭제하시겠습니까?'))return;D.employees=D.employees.filter(e=>e.id!==id);D.accounts=D.accounts.filter(a=>a.employeeId!==id);D.leaveRequests=D.leaveRequests.filter(r=>r.employeeId!==id);sv();R()}
+function dA(id){if(!confirm('이 계정을 삭제하시겠습니까?'))return;D.accounts=D.accounts.filter(a=>a.id!==id);sv();R()}
 
-// Modal
-function sM(title, body) {
-  const o = document.createElement('div'); o.className = 'mo'; o.id = 'mo';
-  o.onclick = e => { if (e.target === o) cM(); };
-  o.innerHTML = `<div class="modal"><div class="mh"><h3>${title}</h3><button class="mc" onclick="cM()">✕</button></div><div id="mb">${body}</div></div>`;
-  document.body.appendChild(o);
-}
-function cM() { const e = document.getElementById('mo'); if (e) e.remove(); }
+function sM(title,body){
+const o=document.createElement('div');o.className='mo';o.id='mo';
+o.onclick=e=>{if(e.target===o)cM()};
+o.innerHTML=`<div class="modal"><div class="mh"><h3>${title}</h3><button class="mc" onclick="cM()">✕</button></div><div id="mb">${body}</div></div>`;
+document.body.appendChild(o)}
+function cM(){const e=document.getElementById('mo');if(e)e.remove()}
 
-function openNR() {
-  sM('연차 신청', `
+function openNR(){
+sM('연차 신청',`
 <div class="fg"><label class="fl">유형</label><select class="fs" id="rt"><option value="연차">연차</option><option value="반차(오전)">반차 (오전)</option><option value="반차(오후)">반차 (오후)</option></select></div>
 <div class="fr"><div class="fg"><label class="fl">시작일</label><input class="fi" type="date" id="rs" onchange="uRP()"></div><div class="fg"><label class="fl">종료일</label><input class="fi" type="date" id="re" onchange="uRP()"></div></div>
 <div class="fg"><label class="fl">사유</label><input class="fi" id="rr" placeholder="사유를 입력하세요"></div>
 <div id="rp" style="font-size:12px;color:var(--ac);margin-bottom:12px;display:none"></div>
-<button class="btn btn-p btn-full" onclick="subR()">신청하기</button>`);
-}
-function uRP() { const s = document.getElementById('rs').value, e = document.getElementById('re').value, t = document.getElementById('rt').value, p = document.getElementById('rp'); if (s && e) { const d = cdays(s, e, t), emp = myE(), rem = emp.totalLeave - uLeave(emp.id); p.textContent = `사용: ${d}일 · 잔여: ${rem - d}일`; p.style.display = 'block'; } }
-async function subR() { const s = document.getElementById('rs').value, e = document.getElementById('re').value, r = document.getElementById('rr').value, t = document.getElementById('rt').value; if (!s || !e) { alert('날짜를 선택해주세요'); return; } if (s > e) { alert('종료일은 시작일 이후여야 합니다'); return; } D.leaveRequests.push({ id: gid(), employeeId: LU.employeeId, startDate: s, endDate: e, reason: r || '개인 사유', status: 'pending', type: t, createdAt: td() }); await sv(); cM(); R(); }
+<button class="btn btn-p btn-full" onclick="subR()">신청하기</button>`)}
+function uRP(){const s=document.getElementById('rs').value,e=document.getElementById('re').value,t=document.getElementById('rt').value,p=document.getElementById('rp');
+if(s&&e){const d=cdays(s,e,t),emp=myE(),rem=emp.totalLeave-uLeave(emp.id);p.textContent=`사용: ${d}일 · 잔여: ${rem-d}일`;p.style.display='block'}}
+function subR(){const s=document.getElementById('rs').value,e=document.getElementById('re').value,r=document.getElementById('rr').value,t=document.getElementById('rt').value;
+if(!s||!e){alert('날짜를 선택해주세요');return}if(s>e){alert('종료일은 시작일 이후여야 합니다');return}
+D.leaveRequests.push({id:gid(),employeeId:LU.employeeId,startDate:s,endDate:e,reason:r||'개인 사유',status:'pending',type:t,createdAt:td()});sv();cM();R()}
 
-function openAE() {
-  sM('직원 추가', `
+function openAE(){
+sM('직원 추가',`
 <div class="fg"><label class="fl">이름</label><input class="fi" id="an" placeholder="이름"></div>
 <div class="fg"><label class="fl">부서</label><input class="fi" id="ad" placeholder="부서명"></div>
 <div class="fr"><div class="fg"><label class="fl">총 연차</label><input class="fi" type="number" id="al" value="15"></div>
@@ -378,77 +365,102 @@ function openAE() {
 <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--ts)">🔐 로그인 계정 함께 생성</div>
 <div class="fr"><div class="fg"><label class="fl">아이디</label><input class="fi" id="ai" placeholder="로그인 아이디"></div>
 <div class="fg"><label class="fl">비밀번호</label><input class="fi" id="ap" placeholder="비밀번호" value="1234"></div></div></div>
-<button class="btn btn-p btn-full" onclick="addE()">추가하기</button>`);
-}
-async function addE() { const n = document.getElementById('an').value.trim(); if (!n) { alert('이름을 입력해주세요'); return; } const d = document.getElementById('ad').value.trim() || '미정', l = parseInt(document.getElementById('al').value) || 15, r = document.getElementById('ar').value; const li = document.getElementById('ai').value.trim(), pw = document.getElementById('ap').value; const eid = gid(); D.employees.push({ id: eid, name: n, department: d, totalLeave: l, role: r }); if (li) { if (D.accounts.find(a => a.loginId === li)) { alert('이미 존재하는 아이디입니다'); return; } D.accounts.push({ id: gid(), loginId: li, password: pw || '1234', employeeId: eid }); } await sv(); cM(); R(); }
+<button class="btn btn-p btn-full" onclick="addE()">추가하기</button>`)}
+function addE(){const n=document.getElementById('an').value.trim();if(!n){alert('이름을 입력해주세요');return}
+const d=document.getElementById('ad').value.trim()||'미정',l=parseInt(document.getElementById('al').value)||15,r=document.getElementById('ar').value;
+const li=document.getElementById('ai').value.trim(),pw=document.getElementById('ap').value;
+const eid=gid();D.employees.push({id:eid,name:n,department:d,totalLeave:l,role:r});
+if(li){if(D.accounts.find(a=>a.loginId===li)){alert('이미 존재하는 아이디입니다');return}D.accounts.push({id:gid(),loginId:li,password:pw||'1234',employeeId:eid})}
+sv();cM();R()}
 
-function openEE(id) { const e = gE(id); if (!e) return;
-  sM('직원 정보 수정', `
+function openEE(id){const e=gE(id);if(!e)return;
+sM('직원 정보 수정',`
 <div class="fg"><label class="fl">이름</label><input class="fi" id="en" value="${e.name}"></div>
 <div class="fg"><label class="fl">부서</label><input class="fi" id="ed" value="${e.department}"></div>
 <div class="fr"><div class="fg"><label class="fl">총 연차</label><input class="fi" type="number" id="el" value="${e.totalLeave}"></div>
-<div class="fg"><label class="fl">역할</label><select class="fs" id="er"><option value="member" ${e.role === 'member' ? 'selected' : ''}>일반</option><option value="admin" ${e.role === 'admin' ? 'selected' : ''}>관리자</option></select></div></div>
-<button class="btn btn-p btn-full" onclick="updE('${id}')">저장하기</button>`);
-}
-async function updE(id) { const e = gE(id); if (!e) return; e.name = document.getElementById('en').value.trim() || e.name; e.department = document.getElementById('ed').value.trim() || e.department; e.totalLeave = parseInt(document.getElementById('el').value) || e.totalLeave; e.role = document.getElementById('er').value; await sv(); cM(); R(); }
+<div class="fg"><label class="fl">역할</label><select class="fs" id="er"><option value="member" ${e.role==='member'?'selected':''}>일반</option><option value="admin" ${e.role==='admin'?'selected':''}>관리자</option></select></div></div>
+<button class="btn btn-p btn-full" onclick="updE('${id}')">저장하기</button>`)}
+function updE(id){const e=gE(id);if(!e)return;e.name=document.getElementById('en').value.trim()||e.name;e.department=document.getElementById('ed').value.trim()||e.department;
+e.totalLeave=parseInt(document.getElementById('el').value)||e.totalLeave;e.role=document.getElementById('er').value;sv();cM();R()}
 
-function openAA() { const ul = D.employees.filter(e => !D.accounts.find(a => a.employeeId === e.id)); const opts = ul.length ? ul : D.employees;
-  sM('계정 추가', `
+function openAA(){const ul=D.employees.filter(e=>!D.accounts.find(a=>a.employeeId===e.id));
+const opts=ul.length?ul:D.employees;
+sM('계정 추가',`
 <div class="fg"><label class="fl">등록 방식</label><select class="fs" id="na-mode" onchange="toggleAccMode()"><option value="new">새 직원으로 등록</option><option value="exist">기존 직원 연결</option></select></div>
 <div id="na-new-fields">
 <div class="fg"><label class="fl">이름</label><input class="fi" id="na-name" placeholder="이름"></div>
 <div class="fr"><div class="fg"><label class="fl">부서</label><input class="fi" id="na-dept" placeholder="부서명"></div>
-<div class="fg"><label class="fl">역할</label><select class="fs" id="na-role"><option value="member">일반</option><option value="admin">관리자</option></select></div></div></div>
+<div class="fg"><label class="fl">역할</label><select class="fs" id="na-role"><option value="member">일반</option><option value="admin">관리자</option></select></div></div>
+</div>
 <div id="na-exist-field" style="display:none">
-<div class="fg"><label class="fl">직원 선택</label><select class="fs" id="na-e">${opts.map(e => `<option value="${e.id}">${e.name} (${e.department})</option>`).join('')}</select></div></div>
+<div class="fg"><label class="fl">직원 선택</label><select class="fs" id="na-e">${opts.map(e=>`<option value="${e.id}">${e.name} (${e.department})</option>`).join('')}</select></div>
+</div>
 <div class="fr"><div class="fg"><label class="fl">아이디</label><input class="fi" id="na-i" placeholder="로그인 아이디"></div>
 <div class="fg"><label class="fl">비밀번호</label><input class="fi" id="na-p" placeholder="비밀번호" value="1234"></div></div>
-<button class="btn btn-p btn-full" onclick="addA()">생성하기</button>`);
-}
-function toggleAccMode() { const m = document.getElementById('na-mode').value; document.getElementById('na-new-fields').style.display = m === 'new' ? '' : 'none'; document.getElementById('na-exist-field').style.display = m === 'exist' ? '' : 'none'; }
-async function addA() { const mode = document.getElementById('na-mode').value, li = document.getElementById('na-i').value.trim(), pw = document.getElementById('na-p').value; if (!li) { alert('아이디를 입력해주세요'); return; } if (D.accounts.find(a => a.loginId === li)) { alert('이미 존재하는 아이디입니다'); return; } let eid; if (mode === 'new') { const nm = document.getElementById('na-name').value.trim(); if (!nm) { alert('이름을 입력해주세요'); return; } const dp = document.getElementById('na-dept').value.trim() || '미정', rl = document.getElementById('na-role').value; eid = gid(); D.employees.push({ id: eid, name: nm, department: dp, totalLeave: 15, role: rl }); } else { eid = document.getElementById('na-e').value; } D.accounts.push({ id: gid(), loginId: li, password: pw || '1234', employeeId: eid }); await sv(); cM(); R(); }
+<button class="btn btn-p btn-full" onclick="addA()">생성하기</button>`)}
+function toggleAccMode(){const m=document.getElementById('na-mode').value;document.getElementById('na-new-fields').style.display=m==='new'?'':'none';document.getElementById('na-exist-field').style.display=m==='exist'?'':'none'}
+function addA(){const mode=document.getElementById('na-mode').value,li=document.getElementById('na-i').value.trim(),pw=document.getElementById('na-p').value;
+if(!li){alert('아이디를 입력해주세요');return}if(D.accounts.find(a=>a.loginId===li)){alert('이미 존재하는 아이디입니다');return}
+let eid;
+if(mode==='new'){const nm=document.getElementById('na-name').value.trim();if(!nm){alert('이름을 입력해주세요');return}
+const dp=document.getElementById('na-dept').value.trim()||'미정',rl=document.getElementById('na-role').value;
+eid=gid();D.employees.push({id:eid,name:nm,department:dp,totalLeave:15,role:rl})}else{eid=document.getElementById('na-e').value}
+D.accounts.push({id:gid(),loginId:li,password:pw||'1234',employeeId:eid});sv();cM();R()}
 
-function openEA(aid) { const a = D.accounts.find(x => x.id === aid); if (!a) return; const e = gE(a.employeeId);
-  sM('계정 수정', `
-<div style="margin-bottom:14px;padding:10px;background:var(--sa);border-radius:8px;font-size:12px;color:var(--ts)">직원: <b style="color:var(--tx)">${e?.name || '-'}</b> (${e?.department || '-'})</div>
+function openEA(aid){const a=D.accounts.find(x=>x.id===aid);if(!a)return;const e=gE(a.employeeId);
+sM('계정 수정',`
+<div style="margin-bottom:14px;padding:10px;background:var(--sa);border-radius:8px;font-size:12px;color:var(--ts)">직원: <b style="color:var(--tx)">${e?.name||'-'}</b> (${e?.department||'-'})</div>
 <div class="fg"><label class="fl">아이디</label><input class="fi" id="ea-i" value="${a.loginId}"></div>
 <div class="fg"><label class="fl">새 비밀번호</label><input class="fi" id="ea-p" placeholder="변경할 비밀번호 (빈칸이면 유지)"></div>
-<button class="btn btn-p btn-full" onclick="updAcc('${aid}')">저장하기</button>`);
-}
-async function updAcc(aid) { const a = D.accounts.find(x => x.id === aid); if (!a) return; const li = document.getElementById('ea-i').value.trim(), pw = document.getElementById('ea-p').value; if (li && li !== a.loginId) { if (D.accounts.find(x => x.loginId === li && x.id !== aid)) { alert('이미 존재하는 아이디입니다'); return; } a.loginId = li; } if (pw) a.password = pw; await sv(); cM(); R(); }
+<button class="btn btn-p btn-full" onclick="updA('${aid}')">저장하기</button>`)}
+function updA(aid){const a=D.accounts.find(x=>x.id===aid);if(!a)return;
+const li=document.getElementById('ea-i').value.trim(),pw=document.getElementById('ea-p').value;
+if(li&&li!==a.loginId){if(D.accounts.find(x=>x.loginId===li&&x.id!==aid)){alert('이미 존재하는 아이디입니다');return}a.loginId=li}
+if(pw)a.password=pw;sv();cM();R()}
 
-function openMyAcc() { const a = LU, e = myE();
-  sM('내 정보', `
+function openMyAcc(){const a=LU,e=myE();
+sM('내 정보',`
 <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-<div class="eav" style="width:48px;height:48px;font-size:20px;border-radius:12px">${e?.name?.[0] || '?'}</div>
+<div class="eav" style="width:48px;height:48px;font-size:20px;border-radius:12px">${e?.name?.[0]||'?'}</div>
 <div><div style="font-size:16px;font-weight:600">${e?.name} ${rB(e?.role)}</div><div style="font-size:12px;color:var(--ts);margin-top:2px">${e?.department}</div></div></div>
-<div class="fg"><label class="fl">이름</label><input class="fi" id="mp-name" value="${e?.name || ''}"></div>
-<div class="fg"><label class="fl">부서</label><input class="fi" id="mp-dept" value="${e?.department || ''}"></div>
+<div class="fg"><label class="fl">이름</label><input class="fi" id="mp-name" value="${e?.name||''}"></div>
+<div class="fg"><label class="fl">부서</label><input class="fi" id="mp-dept" value="${e?.department||''}"></div>
 <div class="fg"><label class="fl">아이디</label><input class="fi" value="${a.loginId}" disabled style="opacity:.5"></div>
 <div style="border-top:1px solid var(--bd);margin:14px 0;padding-top:14px">
 <div style="font-size:12px;font-weight:600;margin-bottom:10px;color:var(--ts)">🔐 비밀번호 변경</div>
 <div class="fg"><label class="fl">현재 비밀번호</label><input class="fi" type="password" id="mp-o" placeholder="현재 비밀번호"></div>
 <div class="fg"><label class="fl">새 비밀번호</label><input class="fi" type="password" id="mp-n" placeholder="새 비밀번호"></div>
 <div class="fg"><label class="fl">새 비밀번호 확인</label><input class="fi" type="password" id="mp-c" placeholder="새 비밀번호 확인"></div></div>
-<button class="btn btn-p btn-full" onclick="saveMyAcc()">저장하기</button>`);
-}
-async function saveMyAcc() { const e = myE(); if (!e) return; const nm = document.getElementById('mp-name').value.trim(), dp = document.getElementById('mp-dept').value.trim(); if (nm) e.name = nm; if (dp) e.department = dp; const o = document.getElementById('mp-o').value, n = document.getElementById('mp-n').value, c = document.getElementById('mp-c').value; if (o || n || c) { if (!o || !n) { alert('비밀번호를 입력해주세요'); return; } if (o !== LU.password) { alert('현재 비밀번호가 일치하지 않습니다'); return; } if (n !== c) { alert('새 비밀번호가 일치하지 않습니다'); return; } if (n.length < 4) { alert('비밀번호는 4자 이상이어야 합니다'); return; } const a = D.accounts.find(x => x.id === LU.id); if (a) { a.password = n; LU = a; } } await sv(); alert('저장되었습니다'); cM(); R(); }
+<button class="btn btn-p btn-full" onclick="saveMyAcc()">저장하기</button>`)}
+function saveMyAcc(){const e=myE();if(!e)return;
+const nm=document.getElementById('mp-name').value.trim(),dp=document.getElementById('mp-dept').value.trim();
+if(nm)e.name=nm;if(dp)e.department=dp;
+const o=document.getElementById('mp-o').value,n=document.getElementById('mp-n').value,c=document.getElementById('mp-c').value;
+if(o||n||c){if(!o||!n){alert('비밀번호를 입력해주세요');return}if(o!==LU.password){alert('현재 비밀번호가 일치하지 않습니다');return}
+if(n!==c){alert('새 비밀번호가 일치하지 않습니다');return}if(n.length<4){alert('비밀번호는 4자 이상이어야 합니다');return}
+const a=D.accounts.find(x=>x.id===LU.id);if(a){a.password=n;LU=a}}
+sv();alert('저장되었습니다');cM();R()}
 
-async function impData(event) {
-  const file = event.target.files[0]; if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async function(e) {
-    try {
-      const parsed = JSON.parse(e.target.result);
-      if (!parsed.accounts || !parsed.employees || !parsed.leaveRequests) { alert('올바른 백업 파일이 아닙니다.'); return; }
-      if (!confirm(`복원하시겠습니까?\n\n직원 ${parsed.employees.length}명, 계정 ${parsed.accounts.length}개\n\n현재 데이터는 교체됩니다.`)) return;
-      await fetch(API + '/api/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parsed) });
-      D = parsed; LU = D.accounts[0] || null; if (LU) sessionStorage.setItem('leave-s', LU.id);
-      alert('복원 완료!'); R();
-    } catch { alert('파일을 읽을 수 없습니다.'); }
-  };
-  reader.readAsText(file); event.target.value = '';
-}
+function exportData(){
+const blob=new Blob([JSON.stringify(D,null,2)],{type:'application/json'});
+const url=URL.createObjectURL(blob);
+const a=document.createElement('a');
+const now=new Date();
+const ts=now.getFullYear()+String(now.getMonth()+1).padStart(2,'0')+String(now.getDate()).padStart(2,'0')+'_'+String(now.getHours()).padStart(2,'0')+String(now.getMinutes()).padStart(2,'0');
+a.href=url;a.download=`연차관리_백업_${ts}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url)}
+
+function importData(event){
+const file=event.target.files[0];if(!file)return;
+const reader=new FileReader();
+reader.onload=function(e){
+try{const parsed=JSON.parse(e.target.result);
+if(!parsed.accounts||!parsed.employees||!parsed.leaveRequests){alert('올바른 백업 파일이 아닙니다.');return}
+if(!confirm(`백업 파일을 복원하시겠습니까?\n\n직원 ${parsed.employees.length}명, 계정 ${parsed.accounts.length}개, 연차신청 ${parsed.leaveRequests.length}건\n\n현재 데이터는 교체됩니다.`))return;
+D=parsed;sv();
+LU=D.accounts[0]||null;if(LU)sessionStorage.setItem('leave-s',LU.id);
+alert('복원 완료! 첫 번째 계정으로 로그인됩니다.');R();
+}catch{alert('파일을 읽을 수 없습니다. JSON 형식인지 확인해주세요.')}};
+reader.readAsText(file);event.target.value=''}
 
 init();
 </script>

@@ -1,12 +1,16 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const { MongoClient } = require('mongodb');
 
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, 'data.json');
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:비밀번호@cluster0.jpigxal.mongodb.net/?appName=Cluster0';
+const DB_NAME = 'leaveManager';
+const COL_NAME = 'appData';
 const HTML_FILE = path.join(__dirname, 'index.html');
 
 const defaultData = {
+  _id: 'main',
   accounts: [
     { id: 'acc1', loginId: 'admin', password: 'admin123', employeeId: 'emp1' }
   ],
@@ -16,18 +20,45 @@ const defaultData = {
   leaveRequests: []
 };
 
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(defaultData, null, 2), 'utf8');
-  console.log('✅ data.json 생성됨');
+let db, col;
+
+async function connectDB() {
+  try {
+    const client = new MongoClient(MONGO_URI);
+    await client.connect();
+    db = client.db(DB_NAME);
+    col = db.collection(COL_NAME);
+    // 초기 데이터 없으면 생성
+    const existing = await col.findOne({ _id: 'main' });
+    if (!existing) {
+      await col.insertOne(JSON.parse(JSON.stringify(defaultData)));
+      console.log('✅ 초기 데이터 생성됨');
+    }
+    console.log('✅ MongoDB 연결 성공!');
+  } catch (err) {
+    console.error('❌ MongoDB 연결 실패:', err.message);
+    process.exit(1);
+  }
 }
 
-function readData() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
-  catch { return JSON.parse(JSON.stringify(defaultData)); }
+async function readData() {
+  try {
+    const doc = await col.findOne({ _id: 'main' });
+    if (!doc) return JSON.parse(JSON.stringify(defaultData));
+    const { _id, ...data } = doc;
+    return data;
+  } catch {
+    return JSON.parse(JSON.stringify(defaultData));
+  }
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+async function writeData(data) {
+  try {
+    data._id = 'main';
+    await col.replaceOne({ _id: 'main' }, data, { upsert: true });
+  } catch (err) {
+    console.error('저장 실패:', err.message);
+  }
 }
 
 function parseBody(req) {
@@ -40,7 +71,7 @@ function parseBody(req) {
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') { res.writeHead(200); res.end(); return; }
 
@@ -58,15 +89,16 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/data' && req.method === 'GET') {
+    const data = await readData();
     res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
-    res.end(JSON.stringify(readData()));
+    res.end(JSON.stringify(data));
     return;
   }
 
   if (url === '/api/data' && req.method === 'POST') {
     try {
       const data = await parseBody(req);
-      writeData(data);
+      await writeData(data);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     } catch {
@@ -76,15 +108,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/reset' && req.method === 'POST') {
-    writeData(JSON.parse(JSON.stringify(defaultData)));
+    await writeData(JSON.parse(JSON.stringify(defaultData)));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: true }));
     return;
   }
 
-  // 백업 다운로드
   if (url === '/api/backup' && req.method === 'GET') {
-    const data = readData();
+    const data = await readData();
     const ts = new Date().toISOString().slice(0, 10);
     res.writeHead(200, {
       'Content-Type': 'application/json; charset=utf-8',
@@ -94,14 +125,13 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // 백업 복원
   if (url === '/api/restore' && req.method === 'POST') {
     try {
       const data = await parseBody(req);
       if (!data.accounts || !data.employees || !data.leaveRequests) {
-        res.writeHead(400); res.end(JSON.stringify({ error: 'invalid backup' })); return;
+        res.writeHead(400); res.end(JSON.stringify({ error: 'invalid' })); return;
       }
-      writeData(data);
+      await writeData(data);
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     } catch {
@@ -113,10 +143,13 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end('Not Found');
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log('');
-  console.log('═══════════════════════════════════════');
-  console.log('  🗓  연차 관리 시스템 서버 시작!');
-  console.log(`  ▶ http://localhost:${PORT}`);
-  console.log('═══════════════════════════════════════');
+connectDB().then(() => {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log('');
+    console.log('═══════════════════════════════════════');
+    console.log('  🗓  연차 관리 시스템 서버 시작!');
+    console.log(`  ▶ http://localhost:${PORT}`);
+    console.log('  💾 MongoDB Atlas 연동 (영구 저장)');
+    console.log('═══════════════════════════════════════');
+  });
 });
