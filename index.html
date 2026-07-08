@@ -135,14 +135,28 @@ leaveRequests:[
 
 let D={},LU=null,CT='dashboard',CY,CM,LE='';
 
-function init(){
+async function init(){
 const n=new Date();CY=n.getFullYear();CM=n.getMonth();
-try{const s=localStorage.getItem(SK);D=s?JSON.parse(s):JSON.parse(JSON.stringify(DD))}catch{D=JSON.parse(JSON.stringify(DD))}
+try{
+  const res=await fetch('/api/data');
+  if(!res.ok)throw new Error('load failed');
+  D=await res.json();
+  try{localStorage.setItem(SK,JSON.stringify(D))}catch{}
+}catch{
+  console.error('서버에서 데이터를 불러오지 못했습니다. 로컬 백업을 사용합니다.');
+  try{const s=localStorage.getItem(SK);D=s?JSON.parse(s):JSON.parse(JSON.stringify(DD))}catch{D=JSON.parse(JSON.stringify(DD))}
+}
 const ss=sessionStorage.getItem('leave-s');
 if(ss){const a=D.accounts.find(x=>x.id===ss);if(a)LU=a}
 R()}
 
-function sv(){try{localStorage.setItem(SK,JSON.stringify(D))}catch{}}
+function sv(){
+try{localStorage.setItem(SK,JSON.stringify(D))}catch{}
+fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(D)})
+  .then(r=>r.json())
+  .then(res=>{if(!res.success)alert('⚠️ 저장 실패: 서버에 반영되지 않았습니다. 잠시 후 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')})
+  .catch(()=>{alert('⚠️ 저장 실패: 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')});
+}
 function resetAll(){if(!confirm('모든 데이터를 초기화하시겠습니까?'))return;D=JSON.parse(JSON.stringify(DD));sv();R()}
 
 const gid=()=>'id'+Math.random().toString(36).slice(2,10);
