@@ -32,7 +32,9 @@ async function connectDB() {
     const existing = await col.findOne({ _id: 'main' });
     if (!existing) {
       await col.insertOne(JSON.parse(JSON.stringify(defaultData)));
-      console.log('✅ 초기 데이터 생성됨');
+      console.log('⚠️  기존 데이터를 찾지 못해 새로 생성했습니다 (직원/연차 데이터가 초기화됨)');
+    } else {
+      console.log(`✅ 기존 데이터 로드됨 (직원 ${existing.employees?.length || 0}명, 연차신청 ${existing.leaveRequests?.length || 0}건)`);
     }
     console.log('✅ MongoDB 연결 성공!');
   } catch (err) {
@@ -47,17 +49,22 @@ async function readData() {
     if (!doc) return JSON.parse(JSON.stringify(defaultData));
     const { _id, ...data } = doc;
     return data;
-  } catch {
+  } catch (err) {
+    console.error('❌ 읽기 실패:', err.message);
     return JSON.parse(JSON.stringify(defaultData));
   }
 }
 
+// 실패 시 더 이상 조용히 넘어가지 않고, 성공 여부를 그대로 반환합니다.
 async function writeData(data) {
   try {
     data._id = 'main';
-    await col.replaceOne({ _id: 'main' }, data, { upsert: true });
+    const result = await col.replaceOne({ _id: 'main' }, data, { upsert: true });
+    console.log(`💾 저장 완료 (matched: ${result.matchedCount}, modified: ${result.modifiedCount}, upserted: ${result.upsertedCount})`);
+    return { ok: true };
   } catch (err) {
-    console.error('저장 실패:', err.message);
+    console.error('❌ 저장 실패:', err.message);
+    return { ok: false, error: err.message };
   }
 }
 
@@ -98,7 +105,12 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/data' && req.method === 'POST') {
     try {
       const data = await parseBody(req);
-      await writeData(data);
+      const result = await writeData(data);
+      if (!result.ok) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: result.error }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     } catch {
@@ -108,9 +120,9 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/reset' && req.method === 'POST') {
-    await writeData(JSON.parse(JSON.stringify(defaultData)));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ success: true }));
+    const result = await writeData(JSON.parse(JSON.stringify(defaultData)));
+    res.writeHead(result.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ success: result.ok, error: result.error }));
     return;
   }
 
@@ -131,9 +143,9 @@ const server = http.createServer(async (req, res) => {
       if (!data.accounts || !data.employees || !data.leaveRequests) {
         res.writeHead(400); res.end(JSON.stringify({ error: 'invalid' })); return;
       }
-      await writeData(data);
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true }));
+      const result = await writeData(data);
+      res.writeHead(result.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: result.ok, error: result.error }));
     } catch {
       res.writeHead(400); res.end(JSON.stringify({ error: 'bad data' }));
     }
