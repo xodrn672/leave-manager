@@ -12,10 +12,11 @@ const HTML_FILE = path.join(__dirname, 'index.html');
 
 let mailer = null;
 if (process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
+  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
   mailer = nodemailer.createTransport({
     host: process.env.SMTP_SERVER || 'smtp.gmail.com',
-    port: parseInt(process.env.SMTP_PORT || '465', 10),
-    secure: true,
+    port: smtpPort,
+    secure: smtpPort === 465,   // 465=SSL(secure:true), 587=STARTTLS(secure:false)
     auth: { user: process.env.EMAIL_ADDRESS, pass: process.env.EMAIL_PASSWORD }
   });
 }
@@ -149,12 +150,14 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url === '/api/notify' && req.method === 'POST') {
+    console.log('📨 /api/notify 요청 수신됨');
     try {
       const { subject, text } = await parseBody(req);
       sendNotifyMail(subject || '연차관리 알림', text || '');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
-    } catch {
+    } catch (err) {
+      console.error('❌ /api/notify 요청 파싱 실패:', err.message);
       res.writeHead(400); res.end(JSON.stringify({ error: 'bad data' }));
     }
     return;
