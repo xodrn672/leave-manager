@@ -2,12 +2,41 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { MongoClient } = require('mongodb');
+const nodemailer = require('nodemailer');
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:비밀번호@cluster0.jpigxal.mongodb.net/?appName=Cluster0';
 const DB_NAME = 'leaveManager';
 const COL_NAME = 'appData';
 const HTML_FILE = path.join(__dirname, 'index.html');
+
+let mailer = null;
+if (process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
+  mailer = nodemailer.createTransport({
+    host: process.env.SMTP_SERVER || 'smtp.gmail.com',
+    port: parseInt(process.env.SMTP_PORT || '465', 10),
+    secure: true,
+    auth: { user: process.env.EMAIL_ADDRESS, pass: process.env.EMAIL_PASSWORD }
+  });
+}
+
+async function sendNotifyMail(subject, text) {
+  if (!mailer || !process.env.EMAIL_TO) {
+    console.log('[알림] 이메일 미설정, 알림 발송 생략');
+    return;
+  }
+  try {
+    await mailer.sendMail({
+      from: process.env.EMAIL_ADDRESS,
+      to: process.env.EMAIL_TO,
+      subject,
+      text
+    });
+    console.log(`✅ 알림 메일 발송: ${subject}`);
+  } catch (err) {
+    console.error('❌ 알림 메일 발송 실패:', err.message);
+  }
+}
 
 const defaultData = {
   _id: 'main',
@@ -111,6 +140,18 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({ success: false, error: result.error }));
         return;
       }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+    } catch {
+      res.writeHead(400); res.end(JSON.stringify({ error: 'bad data' }));
+    }
+    return;
+  }
+
+  if (url === '/api/notify' && req.method === 'POST') {
+    try {
+      const { subject, text } = await parseBody(req);
+      sendNotifyMail(subject || '연차관리 알림', text || '');
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
     } catch {
