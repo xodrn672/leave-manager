@@ -175,7 +175,7 @@ function isA(){const e=myE();return e?.role==='admin'}
 
 const pal=['#4f46e5','#059669','#dc2626','#d97706','#3b82f6','#8b5cf6','#ec4899','#06b6d4','#f97316','#14b8a6'];
 function eCol(eid){const i=D.employees.findIndex(e=>e.id===eid);return pal[i%pal.length]}
-function bH(st){const m={approved:['승인','b-ok'],pending:['대기','b-pn'],rejected:['반려','b-rj']};const[l,c]=m[st]||m.pending;return`<span class="badge ${c}">${l}</span>`}
+function bH(st){const m={approved:['승인','b-ok'],pending:['대기','b-pn'],rejected:['반려','b-rj'],cancelled:['취소됨','b-rj']};const[l,c]=m[st]||m.pending;return`<span class="badge ${c}">${l}</span>`}
 function rB(r){return r==='admin'?'<span class="badge b-adm">관리자</span>':'<span class="badge b-mem">일반</span>'}
 
 function doLogin(){
@@ -258,7 +258,7 @@ const e=myE(),m=D.leaveRequests.filter(r=>r.employeeId===e.id).sort((a,b)=>b.sta
 return`<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">연차 사용 내역</h2>
 <div class="panel" style="padding:0;overflow:hidden"><div class="tw"><table>
 <thead><tr><th>유형</th><th>기간</th><th>일수</th><th>사유</th><th>상태</th><th></th></tr></thead>
-<tbody>${m.length?m.map(r=>`<tr><td>${r.type}</td><td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td><td>${cdays(r.startDate,r.endDate,r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td>${r.status==='pending'?`<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>`:''}</td></tr>`).join(''):'<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
+<tbody>${m.length?m.map(r=>`<tr><td>${r.type}</td><td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td><td>${cdays(r.startDate,r.endDate,r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td><div style="display:flex;gap:4px">${(r.status==='pending'||r.status==='approved'||r.status==='rejected')?`<button class="btn btn-gh btn-sm" onclick="openER('${r.id}')">수정</button>`:''}${r.status==='pending'?`<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>`:''}${r.status==='approved'?`<button class="btn btn-r btn-sm" onclick="cR('${r.id}')">취소</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
 </tbody></table></div></div>`}
 
 // Overview - 전체 직원 연차 현황
@@ -346,6 +346,23 @@ return`<div style="display:flex;justify-content:space-between;align-items:center
 function aR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='approved';sv();R()}}
 function rR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='rejected';sv();R()}}
 function dR(id){D.leaveRequests=D.leaveRequests.filter(r=>r.id!==id);sv();R()}
+function cR(id){if(!confirm('이미 승인된 연차입니다. 취소하시겠습니까?\n(사용한 연차일수가 다시 복구됩니다)'))return;const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='cancelled';sv();R()}}
+function openER(id){const r=D.leaveRequests.find(x=>x.id===id);if(!r)return;
+sM('연차 신청 수정',`
+<div class="fg"><label class="fl">유형</label><select class="fs" id="ert"><option value="연차"${r.type==='연차'?' selected':''}>연차</option><option value="반차(오전)"${r.type==='반차(오전)'?' selected':''}>반차 (오전)</option><option value="반차(오후)"${r.type==='반차(오후)'?' selected':''}>반차 (오후)</option></select></div>
+<div class="fr"><div class="fg"><label class="fl">시작일</label><input class="fi" type="date" id="ers" value="${r.startDate}" onchange="uERP('${id}')"></div><div class="fg"><label class="fl">종료일</label><input class="fi" type="date" id="ere" value="${r.endDate}" onchange="uERP('${id}')"></div></div>
+<div class="fg"><label class="fl">사유</label><input class="fi" id="err" value="${r.reason}" placeholder="사유를 입력하세요"></div>
+<div id="erp" style="font-size:12px;color:var(--ac);margin-bottom:12px;display:none"></div>
+${r.status!=='pending'?'<div style="font-size:12px;color:var(--ts);margin-bottom:12px">⚠️ 수정 시 다시 승인 대기 상태로 전환됩니다.</div>':''}
+<button class="btn btn-p btn-full" onclick="subER('${id}')">수정 완료</button>`)}
+function uERP(id){const s=document.getElementById('ers').value,e=document.getElementById('ere').value,t=document.getElementById('ert').value,p=document.getElementById('erp');
+if(s&&e){const d=cdays(s,e,t),emp=myE(),usedExcl=D.leaveRequests.filter(x=>x.employeeId===emp.id&&x.status==='approved'&&x.id!==id).reduce((sum,x)=>sum+cdays(x.startDate,x.endDate,x.type),0),rem=emp.totalLeave-usedExcl;p.textContent=`사용: ${d}일 · 잔여: ${rem-d}일`;p.style.display='block'}}
+function subER(id){const s=document.getElementById('ers').value,e=document.getElementById('ere').value,r=document.getElementById('err').value,t=document.getElementById('ert').value;
+if(!s||!e){alert('날짜를 선택해주세요');return}if(s>e){alert('종료일은 시작일 이후여야 합니다');return}
+const req=D.leaveRequests.find(x=>x.id===id);if(!req)return;
+req.startDate=s;req.endDate=e;req.reason=r||'개인 사유';req.type=t;
+if(req.status!=='pending')req.status='pending';
+sv();cM();R()}
 function dE(id){if(!confirm('이 직원을 삭제하시겠습니까?'))return;D.employees=D.employees.filter(e=>e.id!==id);D.accounts=D.accounts.filter(a=>a.employeeId!==id);D.leaveRequests=D.leaveRequests.filter(r=>r.employeeId!==id);sv();R()}
 function dA(id){if(!confirm('이 계정을 삭제하시겠습니까?'))return;D.accounts=D.accounts.filter(a=>a.id!==id);sv();R()}
 
