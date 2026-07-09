@@ -157,6 +157,10 @@ fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},bod
   .then(res=>{if(!res.success)alert('⚠️ 저장 실패: 서버에 반영되지 않았습니다. 잠시 후 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')})
   .catch(()=>{alert('⚠️ 저장 실패: 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')});
 }
+
+function notifyMail(subject,text){
+fetch('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject,text})}).catch(()=>{});
+}
 function resetAll(){if(!confirm('모든 데이터를 초기화하시겠습니까?'))return;D=JSON.parse(JSON.stringify(DD));sv();R()}
 
 const gid=()=>'id'+Math.random().toString(36).slice(2,10);
@@ -258,7 +262,7 @@ const e=myE(),m=D.leaveRequests.filter(r=>r.employeeId===e.id).sort((a,b)=>b.sta
 return`<h2 style="margin-bottom:18px;font-size:18px;font-weight:700">연차 사용 내역</h2>
 <div class="panel" style="padding:0;overflow:hidden"><div class="tw"><table>
 <thead><tr><th>유형</th><th>기간</th><th>일수</th><th>사유</th><th>상태</th><th></th></tr></thead>
-<tbody>${m.length?m.map(r=>`<tr><td>${r.type}</td><td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td><td>${cdays(r.startDate,r.endDate,r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td><div style="display:flex;gap:4px">${(r.status==='pending'||r.status==='approved'||r.status==='rejected')?`<button class="btn btn-gh btn-sm" onclick="openER('${r.id}')">수정</button>`:''}${r.status==='pending'?`<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>`:''}${r.status==='approved'?`<button class="btn btn-r btn-sm" onclick="cR('${r.id}')">취소</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
+<tbody>${m.length?m.map(r=>`<tr><td>${r.type}</td><td>${r.startDate===r.endDate?r.startDate:r.startDate+' ~ '+r.endDate}</td><td>${cdays(r.startDate,r.endDate,r.type)}일</td><td style="color:var(--ts)">${r.reason}</td><td>${bH(r.status)}</td><td><div style="display:flex;gap:4px">${(r.status==='pending'||r.status==='approved'||r.status==='rejected')?`<button class="btn btn-gh btn-sm" onclick="openER('${r.id}')">수정</button>`:''}${r.status==='pending'?`<button class="btn btn-r btn-sm" onclick="dR('${r.id}')">취소</button>`:''}</div></td></tr>`).join(''):'<tr><td colspan="6" class="empty">내역이 없습니다</td></tr>'}
 </tbody></table></div></div>`}
 
 // Overview - 전체 직원 연차 현황
@@ -307,7 +311,7 @@ return`<div class="rcard"><div><div style="font-size:14px;font-weight:600;margin
 <div style="font-size:11px;color:${rem<=3?'var(--rd)':'var(--gn)'};margin-top:3px">잔여: ${rem}일</div></div>
 <div style="display:flex;gap:6px"><button class="btn btn-g" onclick="aR('${r.id}')">승인</button><button class="btn btn-r" onclick="rR('${r.id}')">반려</button></div></div>`}).join(''):'<div class="panel"><div class="empty">대기 중인 신청이 없습니다</div></div>'}
 <h3 style="margin:24px 0 12px;font-size:15px;font-weight:600">처리 완료</h3>
-${dn.map(r=>{const e=gE(r.employeeId);return`<div class="hrow"><div><span style="font-weight:500">${e?.name}</span> <span style="color:var(--ts)">${r.startDate} ~ ${r.endDate}</span></div>${bH(r.status)}</div>`}).join('')}`}
+${dn.map(r=>{const e=gE(r.employeeId);return`<div class="hrow"><div><span style="font-weight:500">${e?.name}</span> <span style="color:var(--ts)">${r.startDate} ~ ${r.endDate}</span></div><div style="display:flex;align-items:center;gap:8px">${bH(r.status)}${r.status==='approved'?`<button class="btn btn-r btn-sm" onclick="cR('${r.id}')">취소</button>`:''}</div></div>`}).join('')}`}
 
 function rEmps(){
 return`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px"><h2 style="font-size:18px;font-weight:700">직원 관리</h2>
@@ -345,7 +349,8 @@ return`<div style="display:flex;justify-content:space-between;align-items:center
 
 function aR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='approved';sv();R()}}
 function rR(id){const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='rejected';sv();R()}}
-function dR(id){D.leaveRequests=D.leaveRequests.filter(r=>r.id!==id);sv();R()}
+function dR(id){const r=D.leaveRequests.find(x=>x.id===id),e=r?gE(r.employeeId):null;D.leaveRequests=D.leaveRequests.filter(r=>r.id!==id);sv();R();
+if(r&&e)notifyMail('[연차관리] 신청 취소','이름: '+e.name+'\n부서: '+e.department+'\n유형: '+r.type+'\n기간: '+r.startDate+' ~ '+r.endDate+'\n사유: '+r.reason+'\n\n본인이 대기중이던 신청을 취소했습니다.');}
 function cR(id){if(!confirm('이미 승인된 연차입니다. 취소하시겠습니까?\n(사용한 연차일수가 다시 복구됩니다)'))return;const r=D.leaveRequests.find(x=>x.id===id);if(r){r.status='cancelled';sv();R()}}
 function openER(id){const r=D.leaveRequests.find(x=>x.id===id);if(!r)return;
 sM('연차 신청 수정',`
@@ -360,9 +365,12 @@ if(s&&e){const d=cdays(s,e,t),emp=myE(),usedExcl=D.leaveRequests.filter(x=>x.emp
 function subER(id){const s=document.getElementById('ers').value,e=document.getElementById('ere').value,r=document.getElementById('err').value,t=document.getElementById('ert').value;
 if(!s||!e){alert('날짜를 선택해주세요');return}if(s>e){alert('종료일은 시작일 이후여야 합니다');return}
 const req=D.leaveRequests.find(x=>x.id===id);if(!req)return;
+const wasReset=req.status!=='pending';
 req.startDate=s;req.endDate=e;req.reason=r||'개인 사유';req.type=t;
-if(req.status!=='pending')req.status='pending';
-sv();cM();R()}
+if(wasReset)req.status='pending';
+sv();cM();R();
+const emp=gE(req.employeeId);
+if(emp)notifyMail('[연차관리] 신청 수정','이름: '+emp.name+'\n부서: '+emp.department+'\n유형: '+t+'\n기간: '+s+' ~ '+e+'\n사유: '+(r||'개인 사유')+(wasReset?'\n\n신청 내용이 변경되어 승인 대기 상태로 전환되었습니다.':'\n\n대기중이던 신청 내용이 수정되었습니다.'));}
 function dE(id){if(!confirm('이 직원을 삭제하시겠습니까?'))return;D.employees=D.employees.filter(e=>e.id!==id);D.accounts=D.accounts.filter(a=>a.employeeId!==id);D.leaveRequests=D.leaveRequests.filter(r=>r.employeeId!==id);sv();R()}
 function dA(id){if(!confirm('이 계정을 삭제하시겠습니까?'))return;D.accounts=D.accounts.filter(a=>a.id!==id);sv();R()}
 
@@ -384,7 +392,9 @@ function uRP(){const s=document.getElementById('rs').value,e=document.getElement
 if(s&&e){const d=cdays(s,e,t),emp=myE(),rem=emp.totalLeave-uLeave(emp.id);p.textContent=`사용: ${d}일 · 잔여: ${rem-d}일`;p.style.display='block'}}
 function subR(){const s=document.getElementById('rs').value,e=document.getElementById('re').value,r=document.getElementById('rr').value,t=document.getElementById('rt').value;
 if(!s||!e){alert('날짜를 선택해주세요');return}if(s>e){alert('종료일은 시작일 이후여야 합니다');return}
-D.leaveRequests.push({id:gid(),employeeId:LU.employeeId,startDate:s,endDate:e,reason:r||'개인 사유',status:'pending',type:t,createdAt:td()});sv();cM();R()}
+D.leaveRequests.push({id:gid(),employeeId:LU.employeeId,startDate:s,endDate:e,reason:r||'개인 사유',status:'pending',type:t,createdAt:td()});sv();cM();R();
+const emp=myE();
+if(emp)notifyMail('[연차관리] 신규 연차 신청','이름: '+emp.name+'\n부서: '+emp.department+'\n유형: '+t+'\n기간: '+s+' ~ '+e+'\n사유: '+(r||'개인 사유')+'\n\n승인 관리 화면에서 확인해주세요.');}
 
 function openAE(){
 sM('직원 추가',`
