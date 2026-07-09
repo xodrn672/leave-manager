@@ -159,7 +159,9 @@ fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},bod
 }
 
 function notifyMail(subject,text){
-fetch('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject,text})}).catch(()=>{});
+fetch('/api/notify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({subject,text})})
+  .then(r=>{if(!r.ok)alert('⚠️ 알림메일 요청 실패 (상태코드: '+r.status+')')})
+  .catch(err=>{alert('⚠️ 알림메일 요청이 서버에 도달하지 못했습니다: '+err.message)});
 }
 function resetAll(){if(!confirm('모든 데이터를 초기화하시겠습니까?'))return;D=JSON.parse(JSON.stringify(DD));sv();R()}
 
