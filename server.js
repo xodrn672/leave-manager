@@ -2,7 +2,6 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { MongoClient, ObjectId } = require('mongodb');
-const nodemailer = require('nodemailer');
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:비밀번호@cluster0.jpigxal.mongodb.net/?appName=Cluster0';
@@ -12,32 +11,36 @@ const HIST_COL = 'appDataHistory';
 const MAX_HISTORY = 30;
 const HTML_FILE = path.join(__dirname, 'index.html');
 
-let mailer = null;
-if (process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
-  const smtpPort = parseInt(process.env.SMTP_PORT || '465', 10);
-  mailer = nodemailer.createTransport({
-    host: process.env.SMTP_SERVER || 'smtp.gmail.com',
-    port: smtpPort,
-    secure: smtpPort === 465,   // 465=SSL(secure:true), 587=STARTTLS(secure:false)
-    auth: { user: process.env.EMAIL_ADDRESS, pass: process.env.EMAIL_PASSWORD }
-  });
-}
-
+// Render 무료 요금제는 SMTP 포트(25/465/587)를 전부 막아놔서 SMTP는 사용 불가.
+// 대신 일반 HTTPS 요청으로 보내는 텔레그램 봇 API를 사용.
 async function sendNotifyMail(subject, text) {
-  if (!mailer || !process.env.EMAIL_TO) {
-    console.log('[알림] 이메일 미설정, 알림 발송 생략');
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatIdsRaw = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatIdsRaw) {
+    console.log('[알림] 텔레그램 미설정, 알림 발송 생략');
     return;
   }
-  try {
-    await mailer.sendMail({
-      from: process.env.EMAIL_ADDRESS,
-      to: process.env.EMAIL_TO,
-      subject,
-      text
-    });
-    console.log(`✅ 알림 메일 발송: ${subject}`);
-  } catch (err) {
-    console.error('❌ 알림 메일 발송 실패:', err.message);
+  const chatIds = chatIdsRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const message = `*${subject}*\n\n${text}`;
+  for (const chatId of chatIds) {
+    try {
+      const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: message,
+          parse_mode: 'Markdown'
+        })
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`${resp.status} ${errText}`);
+      }
+      console.log(`✅ 텔레그램 알림 발송 (${chatId}): ${subject}`);
+    } catch (err) {
+      console.error(`❌ 텔레그램 알림 발송 실패 (${chatId}):`, err.message);
+    }
   }
 }
 
