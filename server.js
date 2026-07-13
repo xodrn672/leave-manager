@@ -1,13 +1,15 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const nodemailer = require('nodemailer');
 
 const PORT = process.env.PORT || 3000;
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://admin:비밀번호@cluster0.jpigxal.mongodb.net/?appName=Cluster0';
 const DB_NAME = 'leaveManager';
 const COL_NAME = 'appData';
+const HIST_COL = 'appDataHistory';
+const MAX_HISTORY = 30;
 const HTML_FILE = path.join(__dirname, 'index.html');
 
 let mailer = null;
@@ -50,7 +52,7 @@ const defaultData = {
   leaveRequests: []
 };
 
-let db, col;
+let db, col, hist;
 
 async function connectDB() {
   try {
@@ -58,6 +60,7 @@ async function connectDB() {
     await client.connect();
     db = client.db(DB_NAME);
     col = db.collection(COL_NAME);
+    hist = db.collection(HIST_COL);
     // 초기 데이터 없으면 생성
     const existing = await col.findOne({ _id: 'main' });
     if (!existing) {
@@ -88,6 +91,19 @@ async function readData() {
 // 실패 시 더 이상 조용히 넘어가지 않고, 성공 여부를 그대로 반환합니다.
 async function writeData(data) {
   try {
+    // 덮어쓰기 전에 현재 상태를 자동 백업으로 남겨둠 (실수로 초기화/삭제해도 복구 가능하도록)
+    try {
+      const before = await col.findOne({ _id: 'main' });
+      if (before) {
+        const { _id, ...snapshot } = before;
+        await hist.insertOne({ savedAt: new Date(), data: snapshot });
+        const old = await hist.find().sort({ savedAt: -1 }).skip(MAX_HISTORY).toArray();
+        if (old.length) await hist.deleteMany({ _id: { $in: old.map(o => o._id) } });
+      }
+    } catch (histErr) {
+      console.error('⚠️ 자동 백업 스냅샷 실패(저장은 계속 진행):', histErr.message);
+    }
+
     data._id = 'main';
     const result = await col.replaceOne({ _id: 'main' }, data, { upsert: true });
     console.log(`💾 저장 완료 (matched: ${result.matchedCount}, modified: ${result.modifiedCount}, upserted: ${result.upsertedCount})`);
@@ -167,6 +183,37 @@ const server = http.createServer(async (req, res) => {
     const result = await writeData(JSON.parse(JSON.stringify(defaultData)));
     res.writeHead(result.ok ? 200 : 500, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ success: result.ok, error: result.error }));
+    return;
+  }
+
+  if (url === '/api/history' && req.method === 'GET') {
+    try {
+      const items = await hist.find().sort({ savedAt: -1 }).limit(MAX_HISTORY).toArray();
+      const list = items.map(it => ({
+        id: it._id.toString(),
+        savedAt: it.savedAt,
+        employees: it.data.employees?.length || 0,
+        leaveRequests: it.data.leaveRequests?.length || 0
+      }));
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(list));
+    } catch (err) {
+      res.writeHead(500); res.end(JSON.stringify({ error: err.message }));
+    }
+    return;
+  }
+
+  if (url === '/api/history/restore' && req.method === 'POST') {
+    try {
+      const { id } = await parseBody(req);
+      const snap = await hist.findOne({ _id: new ObjectId(id) });
+      if (!snap) { res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return; }
+      const result = await writeData(snap.data);
+      res.writeHead(result.ok ? 200 : 500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: result.ok, error: result.error }));
+    } catch (err) {
+      res.writeHead(400); res.end(JSON.stringify({ error: err.message }));
+    }
     return;
   }
 
