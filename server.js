@@ -67,7 +67,7 @@ async function connectDB() {
     // 초기 데이터 없으면 생성
     const existing = await col.findOne({ _id: 'main' });
     if (!existing) {
-      await col.insertOne(JSON.parse(JSON.stringify(defaultData)));
+      await col.insertOne({ ...JSON.parse(JSON.stringify(defaultData)), _v: 1 });
       console.log('⚠️  기존 데이터를 찾지 못해 새로 생성했습니다 (직원/연차 데이터가 초기화됨)');
     } else {
       console.log(`✅ 기존 데이터 로드됨 (직원 ${existing.employees?.length || 0}명, 연차신청 ${existing.leaveRequests?.length || 0}건)`);
@@ -82,21 +82,25 @@ async function connectDB() {
 async function readData() {
   try {
     const doc = await col.findOne({ _id: 'main' });
-    if (!doc) return JSON.parse(JSON.stringify(defaultData));
+    if (!doc) return { ...JSON.parse(JSON.stringify(defaultData)), _v: 0 };
     const { _id, ...data } = doc;
+    if (data._v === undefined) data._v = 0;
     return data;
   } catch (err) {
     console.error('❌ 읽기 실패:', err.message);
-    return JSON.parse(JSON.stringify(defaultData));
+    return { ...JSON.parse(JSON.stringify(defaultData)), _v: 0 };
   }
 }
 
 // 실패 시 더 이상 조용히 넘어가지 않고, 성공 여부를 그대로 반환합니다.
-async function writeData(data) {
+// expectedVersion을 넘기면 낙관적 동시성 제어(버전 충돌 검사)를 수행합니다.
+// - 여러 사람이 동시에 접속해 있다가 서로의 변경사항을 덮어써버리는 사고를 방지합니다.
+async function writeData(data, expectedVersion) {
   try {
+    const before = await col.findOne({ _id: 'main' });
+
     // 덮어쓰기 전에 현재 상태를 자동 백업으로 남겨둠 (실수로 초기화/삭제해도 복구 가능하도록)
     try {
-      const before = await col.findOne({ _id: 'main' });
       if (before) {
         const { _id, ...snapshot } = before;
         await hist.insertOne({ savedAt: new Date(), data: snapshot });
@@ -107,10 +111,25 @@ async function writeData(data) {
       console.error('⚠️ 자동 백업 스냅샷 실패(저장은 계속 진행):', histErr.message);
     }
 
-    data._id = 'main';
-    const result = await col.replaceOne({ _id: 'main' }, data, { upsert: true });
-    console.log(`💾 저장 완료 (matched: ${result.matchedCount}, modified: ${result.modifiedCount}, upserted: ${result.upsertedCount})`);
-    return { ok: true };
+    const currentVersion = before?._v || 0;
+
+    // 버전 검사가 필요한 요청인데, 내가 마지막으로 본 버전과 현재 서버 버전이 다르면
+    // -> 그 사이 다른 사람이 먼저 저장한 것이므로 덮어쓰지 않고 충돌로 처리
+    if (expectedVersion !== undefined && expectedVersion !== currentVersion) {
+      console.log(`⚠️ 저장 충돌 감지 (내가 알던 버전: ${expectedVersion}, 현재 버전: ${currentVersion}) - 덮어쓰기 취소`);
+      const { _id, ...latest } = before || {};
+      return { ok: false, conflict: true, latest };
+    }
+
+    const newVersion = currentVersion + 1;
+    const cleanData = { ...data };
+    delete cleanData._id;
+    cleanData._id = 'main';
+    cleanData._v = newVersion;
+
+    const result = await col.replaceOne({ _id: 'main' }, cleanData, { upsert: true });
+    console.log(`💾 저장 완료 (v${newVersion}) (matched: ${result.matchedCount}, modified: ${result.modifiedCount}, upserted: ${result.upsertedCount})`);
+    return { ok: true, version: newVersion };
   } catch (err) {
     console.error('❌ 저장 실패:', err.message);
     return { ok: false, error: err.message };
@@ -154,14 +173,20 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/data' && req.method === 'POST') {
     try {
       const data = await parseBody(req);
-      const result = await writeData(data);
+      const expectedVersion = typeof data._v === 'number' ? data._v : undefined;
+      const result = await writeData(data, expectedVersion);
+      if (result.conflict) {
+        res.writeHead(409, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, conflict: true, latest: result.latest }));
+        return;
+      }
       if (!result.ok) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, error: result.error }));
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true }));
+      res.end(JSON.stringify({ success: true, version: result.version }));
     } catch {
       res.writeHead(400); res.end(JSON.stringify({ error: 'bad data' }));
     }
