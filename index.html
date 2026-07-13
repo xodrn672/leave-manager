@@ -133,7 +133,7 @@ leaveRequests:[
 {id:'lr5',employeeId:'emp5',startDate:'2026-02-25',endDate:'2026-02-27',reason:'경조사',status:'pending',type:'연차',createdAt:'2026-02-13'}
 ]};
 
-let D={},LU=null,CT='dashboard',CY,CM,LE='';
+let D={},LU=null,CT='dashboard',CY,CM,LE='',DV=0;
 
 async function init(){
 const n=new Date();CY=n.getFullYear();CM=n.getMonth();
@@ -141,21 +141,35 @@ try{
   const res=await fetch('/api/data');
   if(!res.ok)throw new Error('load failed');
   D=await res.json();
+  DV=D._v||0;
   try{localStorage.setItem(SK,JSON.stringify(D))}catch{}
 }catch{
   console.error('서버에서 데이터를 불러오지 못했습니다. 로컬 백업을 사용합니다.');
   try{const s=localStorage.getItem(SK);D=s?JSON.parse(s):JSON.parse(JSON.stringify(DD))}catch{D=JSON.parse(JSON.stringify(DD))}
+  DV=D._v||0;
 }
 const ss=sessionStorage.getItem('leave-s');
 if(ss){const a=D.accounts.find(x=>x.id===ss);if(a)LU=a}
 R()}
 
-function sv(){
+async function sv(){
 try{localStorage.setItem(SK,JSON.stringify(D))}catch{}
-fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(D)})
-  .then(r=>r.json())
-  .then(res=>{if(!res.success)alert('⚠️ 저장 실패: 서버에 반영되지 않았습니다. 잠시 후 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')})
-  .catch(()=>{alert('⚠️ 저장 실패: 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)')});
+D._v=DV;
+try{
+  const r=await fetch('/api/data',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(D)});
+  const res=await r.json();
+  if(res.conflict){
+    alert('⚠️ 다른 사람이 방금 먼저 저장했습니다. 화면을 최신 데이터로 다시 불러옵니다.\n방금 하신 작업은 다시 한번 시도해주세요.');
+    D=res.latest;DV=D._v||0;
+    try{localStorage.setItem(SK,JSON.stringify(D))}catch{}
+    R();
+    return;
+  }
+  if(!res.success){alert('⚠️ 저장 실패: 서버에 반영되지 않았습니다. 잠시 후 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)');return}
+  DV=res.version;
+}catch{
+  alert('⚠️ 저장 실패: 서버에 연결할 수 없습니다. 인터넷 연결을 확인하고 다시 시도해주세요.\n(변경사항이 이 기기에만 임시로 저장되었습니다)');
+}
 }
 
 function notifyMail(subject,text){
